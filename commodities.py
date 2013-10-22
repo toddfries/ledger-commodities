@@ -5,27 +5,70 @@ import json
 import urllib2
 import datetime
 import sys
-from bs4 import BeautifulSoup
 
-filepath = "prices.dat"
-dataurl = "http://bitcoincharts.com/charts/chart.json?m=mtgoxUSD&SubmitButton=Draw&r=360&i=Daily&c=0&t=S&m1=10&m2=25&x=0&i1=&i2=&i3=&i4=&v=1&cv=0&ps=0&l=0&p=0&"
+filepath = os.path.expanduser("~/prices.dat")
+
+# bitcoincharts currency url explanations
+# i = 1-min, 5-min, 15-min, 30-min, Hourly, 2-hour, 6-hour, 12-hour, Daily, Weekly
+# r = days, empty = all data
+# i1 = (large indicators), empty = none
+# i2 = empty = none
+# i3 = empty = none
+# i4 = empty = none
+# v = (show volume bars)
+# cv = (volume in currency)
+# ps = (parabolic sar)
+# l = (log scale)
+# p = (percent scale)
+# example timeframes that work (too much data requested results in ENODATA)
+# i=Weekly&r=
+# i=Daily&r=90
+# i=Hourly&r=7
+# i=15-min&r=30
+# i=5-min&r=10
+
 metalsdataurl = "http://services.packetizer.com/spotprices/?f=json"
-#mtgoxtickerurl = "http://mtgox.com/api/0/data/ticker.php"
 
-### BITCOIN
+existingprices = file(filepath).readlines()
+existingprices = dict( [ " ".join(l.split()[1:4]), l.strip() ] for l in existingprices )
 
-bcd = urllib2.urlopen(dataurl).read()
+currencies = [
+	[ "mtgoxCAD", "CAD"],
+	[ "mtgoxJPY", "JPY"],
+	[ "justLTC", "LTC"],
+	[ "mtgoxEUR", "EUR"],
+	[ "mtgoxUSD", "USD"],
+	#[ "cryptoxUSD", "xUSD"],
+	[ "bitstampUSD", "bUSD"],
+	#[ "globalUSD", "gUSD"],
+	[ "rockUSD", "oUSD"],
+	[ "mtgoxAUD", "AUD"],
+	[ "mtgoxCHF", "CHF"],
+	[ "mtgoxSEK", "SEK"],
+	[ "mtgoxCNY", "CNY"],
+	[ "mtgoxGBP", "GBP"],
+	[ "mtgoxRUB", "RUB"],
+]
 
-newprices = [ [datetime.datetime.utcfromtimestamp(row[0])] + [row[4]] for row in json.loads(bcd) ]
-newprices = [ ("P", x.strftime("%Y/%m/%d %H:%M:%S"), "BTC", "$" + str(y)) for x,y in newprices ]
-newprices = dict ( [ d[1] + " " + d[2], " ".join(d) ] for d in newprices )
+btcprices = dict()
 
-#mtgox = urllib2.urlopen(mtgoxtickerurl).read()
-#mtgox_json = json.loads(mtgox)
-#last_bitcoin_price = mtgox_json["ticker"]["last"]
-#date = datetime.datetime.now()
-#newprices = ["P", date.strftime("%Y/%m/%d %H:%M:%S"), "BTC", "$%.8f"%last_bitcoin_price]
-#newprices = {newprices[1] + " " + newprices[2]:" ".join(newprices)}
+for cur in currencies:
+  btcurl = "http://bitcoincharts.com/charts/chart.json?m=" + cur[0] + "&SubmitButton=Draw&i=Hourly&r=3&c=0&t=S&m1=10&m2=25&x=0&i1=&i2=&i3=&i4=&v=1&cv=0&ps=0&l=0&p=0&"
+  #print "Starting " + cur[0] + "," + cur[1], ": ", btcurl
+
+  bcd = urllib2.urlopen(btcurl).read()
+ 
+  cprices = [ [datetime.datetime.utcfromtimestamp(row[0])] + [row[4]] for row in json.loads(bcd) ]
+  sprices = [ ]
+  for x,y in cprices:
+    #print "cprices: x = "+str(x)+", y = "+str(y)
+    sprices.append(("P", x.strftime("%Y/%m/%d %H:%M:%S"), "BTC", cur[1], "%0.2f"%float(y)))
+    sprices.append(("P", x.strftime("%Y/%m/%d %H:%M:%S"), cur[1], "BTC", "%0.8f"%(1/float(y))))
+
+  cprices = dict ( [ d[1] + " " + d[2] + " " + d[3], " ".join(d) ] for d in sprices )
+  btcprices.update( cprices )
+  #print "len(btcprices) = " + str(len(btcprices))
+
 
 ### METALS
 
@@ -33,50 +76,18 @@ metalscd = urllib2.urlopen(metalsdataurl).read()
 metalscd = json.loads(metalscd)
 date = metalscd["date"].replace("-","/") + " 17:00:00"
 metalprices = [
-  [ "P", date, "XAU",      "$" + metalscd["gold"]                     ],
-  [ "P", date, "XAG",      "$" + metalscd["silver"]                   ],
-  [ "P", date, "PAMPAU",   "$" + str(float(metalscd["gold"])   +  40) ],
-  [ "P", date, "RCMPAU",   "$" + str(float(metalscd["gold"])   +  50) ],
-  [ "P", date, "ROUNDSAG", "$" + str(float(metalscd["silver"]) + 1.5) ],
+  [ "P", date, "XAU",      "USD", metalscd["gold"]                     ],
+  [ "P", date, "XAG",      "USD", metalscd["silver"]                   ],
+  [ "P", date, "XPL",      "USD", metalscd["platinum"]                 ],
+  [ "P", date, "PAMPAU",   "USD", str(float(metalscd["gold"])   +  40) ],
+  [ "P", date, "RCMPAU",   "USD", str(float(metalscd["gold"])   +  50) ],
+  [ "P", date, "ROUNDSAG", "USD", str(float(metalscd["silver"]) + 1.5) ],
 ]
-metalprices = dict( [ d[1] + " " + d[2], " ".join(d) ] for d in metalprices )
+metalprices = dict( [ d[1] + " " + d[2] + " " + d[3], " ".join(d) ] for d in metalprices )
 
-### LTC
-
-btce_ltc = "http://www.cryptocoincharts.info/period-charts.php?period=alltime&resolution=day&pair=ltc-btc&market=btc-e"
-
-soup = BeautifulSoup(urllib2.urlopen(btce_ltc))
-tags = soup.find_all('tr')
-ltcprices = dict()
-for tag in tags:
-  tds = tag.find_all('td')
-  if len(list(tds)) != 6:
-    continue
-  date = tds[0].contents[0]
-  close_price = tds[4].contents[0].split(" ")[0]
-  ltcprices[date + " " + close_price] = " ".join(["P", date, "00:00:00", "LTC", "BTC", close_price])
-
-### PPC
-
-ppc_url = "http://www.cryptocoincharts.info/period-charts.php?period=alltime&resolution=day&pair=ppc-btc&market=ppcbitparking"
-
-soup = BeautifulSoup(urllib2.urlopen(ppc_url))
-tags = soup.find_all('tr')
-ppcprices = dict()
-for tag in tags:
-  tds = tag.find_all('td')
-  if len(list(tds)) != 6:
-    continue
-  date = tds[0].contents[0]
-  close_price = tds[4].contents[0].split(" ")[0]
-  ppcprices[date + " " + close_price] = " ".join(["P", date, "00:00:00", "PPC", "BTC", close_price])
-
-
-concatdict = dict()
-concatdict.update(newprices)
+concatdict = dict(existingprices)
+concatdict.update(btcprices)
 concatdict.update(metalprices)
-concatdict.update(ltcprices)
-concatdict.update(ppcprices)
 
 values = sorted(concatdict.values())
 string = "\n".join(values)
